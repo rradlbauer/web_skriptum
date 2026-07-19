@@ -1,0 +1,11 @@
+{
+  "name": "clinical-diary-frontend",
+  "private": true,
+  "scripts": {
+    "build": "esbuild ts/app.ts --bundle --outfile=../backend/src/main/resources/static/js/app.js",
+    "watch": "esbuild ts/app.ts --bundle --outfile=../backend/src/main/resources/static/js/app.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

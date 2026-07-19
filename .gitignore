@@ -11,3 +11,6 @@ Thumbs.db
 
 # File uploads
 uploads/
+
+# Node
+frontend/node_modules/

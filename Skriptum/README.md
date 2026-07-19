@@ -32,10 +32,18 @@ web_skriptum/
 │           └── static/            # Frontend-Dateien
 │               ├── index.html
 │               ├── css/styles.css
-│               └── js/app.js      # Kompiliertes TypeScript
+│               └── js/app.js      # Kompiliertes TypeScript (via esbuild)
 ├── frontend/
+│   ├── package.json               # npm-Projekt mit esbuild
 │   ├── tsconfig.json
-│   └── ts/app.ts                  # TypeScript-Quellcode
+│   └── ts/
+│       ├── state.ts               # State Management
+│       ├── api.ts                 # HTTP-Client
+│       ├── login.ts               # Login/Register View
+│       ├── patient.ts             # Patient Views
+│       ├── doctor.ts              # Doctor Views
+│       ├── superuser.ts           # Superuser Views
+│       └── app.ts                 # Entry Point (Router, Init)
 └── Skriptum/                      # Dieses Skriptum
 ```
 
