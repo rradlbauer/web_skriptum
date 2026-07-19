@@ -11,7 +11,7 @@ Dieses Skriptum richtet sich an Studierende mit folgenden Vorkenntnissen:
 - **Spring Boot mit Thymeleaf**: Controller, Repositories, serverseitiges Rendering
 - **HTML & CSS**: Semantisches HTML, Layout mit CSS
 
-Neu in diesem Skriptum sind die **client-seitige Darstellung** mit TypeScript und die Kommunikation über eine **REST API** mit **JWT-basierter Authentifizierung**.
+Neu in diesem Skriptum sind die **client-seitige Darstellung** mit TypeScript und die Kommunikation über eine **REST API** mit **JWT-basierter Authentifizierung**. **Keine Vorkenntnisse in Spring Security** werden vorausgesetzt – Sicherheit wird von Grund auf erklärt (Kapitel 04.x).
 
 ## Projektstruktur
 
