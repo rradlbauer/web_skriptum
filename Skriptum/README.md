@@ -69,4 +69,5 @@ Nr. | Kapitel | Übungen
 05.0 | [TypeScript Grundlagen](skriptum/05.0_TypeScript.md) | [Übungen](uebungen/UE_05.0_TypeScript.md)
 05.1 | [Single-Page Application mit TypeScript](skriptum/05.1_SPA_mit_TypeScript.md) | [Übungen](uebungen/UE_05.1_SPA_mit_TypeScript.md)
 06.0 | [Frontend-Backend Integration](skriptum/06.0_FrontendBackend.md) | [Übungen](uebungen/UE_06.0_FrontendBackend.md)
+06.1 | [Datei-Upload & File-Handling](skriptum/06.1_DateiUpload.md) | [Übungen](uebungen/UE_06.1_DateiUpload.md)
 07.0 | [Daten initialisieren & Beispieldaten](skriptum/07.0_DatenInitialisieren.md) | [Übungen](uebungen/UE_07.0_DatenInitialisieren.md)

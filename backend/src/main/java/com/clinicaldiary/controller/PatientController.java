@@ -3,10 +3,15 @@ package com.clinicaldiary.controller;
 import com.clinicaldiary.entity.*;
 import com.clinicaldiary.repository.*;
 import com.clinicaldiary.security.UserPrincipal;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -21,17 +26,22 @@ public class PatientController {
     private final DoctorRepository doctorRepo;
     private final RecordConfirmationRepository confirmationRepo;
     private final RecordIcd10Repository recordIcd10Repo;
+    private final RecordAttachmentRepository attachmentRepo;
+
+    private static final Path UPLOAD_DIR = Path.of("uploads");
 
     public PatientController(PatientRepository patientRepo, HealthRecordRepository recordRepo,
                              DoctorPatientRepository doctorPatientRepo, DoctorRepository doctorRepo,
                              RecordConfirmationRepository confirmationRepo,
-                             RecordIcd10Repository recordIcd10Repo) {
+                             RecordIcd10Repository recordIcd10Repo,
+                             RecordAttachmentRepository attachmentRepo) {
         this.patientRepo = patientRepo;
         this.recordRepo = recordRepo;
         this.doctorPatientRepo = doctorPatientRepo;
         this.doctorRepo = doctorRepo;
         this.confirmationRepo = confirmationRepo;
         this.recordIcd10Repo = recordIcd10Repo;
+        this.attachmentRepo = attachmentRepo;
     }
 
     private Long getCurrentPatientId(Authentication auth) {
@@ -168,6 +178,108 @@ public class PatientController {
         }).collect(Collectors.toList()));
     }
 
+    // --- File Attachments ---
+
+    @PostMapping("/me/records/{recordId}/attachments")
+    public ResponseEntity<?> uploadAttachment(Authentication auth, @PathVariable Long recordId,
+                                              @RequestParam("file") MultipartFile file) throws IOException {
+        HealthRecord r = recordRepo.findById(recordId).orElseThrow();
+        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
+        }
+
+        String storedFilename = UUID.randomUUID() + getExtension(file.getOriginalFilename());
+        Files.createDirectories(UPLOAD_DIR);
+        file.transferTo(UPLOAD_DIR.resolve(storedFilename));
+
+        RecordAttachment att = new RecordAttachment();
+        att.setRecordId(recordId);
+        att.setOriginalFilename(file.getOriginalFilename());
+        att.setStoredFilename(storedFilename);
+        att.setContentType(file.getContentType());
+        att.setSize(file.getSize());
+        att.setUploadedBy(getCurrentPatientId(auth));
+        att.setUploadedAt(LocalDateTime.now().toString());
+        attachmentRepo.save(att);
+
+        return ResponseEntity.ok(Map.of(
+                "id", att.getId(),
+                "originalFilename", att.getOriginalFilename(),
+                "contentType", att.getContentType(),
+                "size", att.getSize(),
+                "uploadedAt", att.getUploadedAt()
+        ));
+    }
+
+    @GetMapping("/me/records/{recordId}/attachments")
+    public ResponseEntity<?> listAttachments(Authentication auth, @PathVariable Long recordId) {
+        HealthRecord r = recordRepo.findById(recordId).orElseThrow();
+        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
+        }
+        return ResponseEntity.ok(attachmentRepo.findByRecordId(recordId).stream().map(a -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", a.getId()); m.put("originalFilename", a.getOriginalFilename());
+            m.put("contentType", a.getContentType()); m.put("size", a.getSize());
+            m.put("uploadedAt", a.getUploadedAt());
+            return m;
+        }).collect(Collectors.toList()));
+    }
+
+    @GetMapping("/me/records/{recordId}/attachments/{attachmentId}")
+    public ResponseEntity<?> downloadAttachment(Authentication auth, @PathVariable Long recordId,
+                                                @PathVariable Long attachmentId) throws IOException {
+        HealthRecord r = recordRepo.findById(recordId).orElseThrow();
+        Long patientId = getCurrentPatientId(auth);
+        if (!r.getPatientId().equals(patientId) &&
+            !doctorPatientRepo.findDoctorIdsByPatientId(patientId).isEmpty()) {
+            // patient or assigned doctor can download
+        } else if (!r.getPatientId().equals(patientId)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
+        }
+
+        RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
+        if (!att.getRecordId().equals(recordId)) {
+            return ResponseEntity.status(404).body(Map.of("error", "Attachment not found"));
+        }
+
+        Path filePath = UPLOAD_DIR.resolve(att.getStoredFilename());
+        if (!Files.exists(filePath)) {
+            return ResponseEntity.status(404).body(Map.of("error", "File not found on disk"));
+        }
+
+        byte[] content = Files.readAllBytes(filePath);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(att.getContentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + att.getOriginalFilename() + "\"")
+                .body(content);
+    }
+
+    @DeleteMapping("/me/records/{recordId}/attachments/{attachmentId}")
+    public ResponseEntity<?> deleteAttachment(Authentication auth, @PathVariable Long recordId,
+                                              @PathVariable Long attachmentId) {
+        HealthRecord r = recordRepo.findById(recordId).orElseThrow();
+        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
+        }
+        if (confirmationRepo.findByRecordId(recordId).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete attachments of confirmed record"));
+        }
+        RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
+        try {
+            Files.deleteIfExists(UPLOAD_DIR.resolve(att.getStoredFilename()));
+        } catch (IOException ignored) {}
+        attachmentRepo.deleteById(attachmentId);
+        return ResponseEntity.ok(Map.of("message", "Attachment deleted"));
+    }
+
+    private String getExtension(String filename) {
+        if (filename == null) return "";
+        int dot = filename.lastIndexOf('.');
+        return dot >= 0 ? filename.substring(dot) : "";
+    }
+
     private Map<String, Object> enrichRecord(HealthRecord r) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", r.getId()); m.put("patientId", r.getPatientId());
@@ -188,6 +300,13 @@ public class PatientController {
             Map<String, Object> im = new HashMap<>();
             im.put("id", icd.getId()); im.put("code", icd.getIcd10Code()); im.put("description", icd.getIcd10Description());
             return im;
+        }).collect(Collectors.toList()));
+        m.put("attachments", attachmentRepo.findByRecordId(r.getId()).stream().map(a -> {
+            Map<String, Object> am = new HashMap<>();
+            am.put("id", a.getId()); am.put("originalFilename", a.getOriginalFilename());
+            am.put("contentType", a.getContentType()); am.put("size", a.getSize());
+            am.put("uploadedAt", a.getUploadedAt());
+            return am;
         }).collect(Collectors.toList()));
         return m;
     }

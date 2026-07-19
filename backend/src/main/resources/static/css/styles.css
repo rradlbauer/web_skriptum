@@ -314,6 +314,28 @@ tr:hover td { background: var(--gray-50); }
     padding: 0;
 }
 
+/* Attachment chips */
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    background: #e0f2fe;
+    color: #0369a1;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+.attachment-chip button {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+}
+
 /* Search */
 .search-box {
     display: flex;

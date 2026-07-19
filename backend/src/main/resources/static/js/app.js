@@ -42,6 +42,62 @@ async function api(method, url, body) {
     }
     return data;
 }
+async function apiUpload(url, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers = {};
+    if (state.token) {
+        headers["Authorization"] = "Bearer " + state.token;
+    }
+    const response = await fetch(url, { method: "POST", headers, body: formData });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || "Upload failed");
+    }
+    return data;
+}
+window.downloadAttachment = async function (recordId, attachmentId, filename) {
+    try {
+        const response = await fetch(`/api/patients/me/records/${recordId}/attachments/${attachmentId}`, {
+            headers: { "Authorization": "Bearer " + state.token }
+        });
+        if (!response.ok)
+            throw new Error("Download failed");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+    catch (e) {
+        alert(e.message);
+    }
+};
+window.downloadDoctorAttachment = async function (recordId, attachmentId, filename) {
+    try {
+        const response = await fetch(`/api/doctors/records/${recordId}/attachments/${attachmentId}`, {
+            headers: { "Authorization": "Bearer " + state.token }
+        });
+        if (!response.ok)
+            throw new Error("Download failed");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+    catch (e) {
+        alert(e.message);
+    }
+};
 // --- View Rendering ---
 const mainContent = document.getElementById("main-content");
 const navbar = document.getElementById("navbar");
@@ -281,6 +337,11 @@ function renderRecordCard(record, isPatient) {
     if (record.confirmed && record.confirmationComment) {
         confirmInfo = `<div style="font-size:0.85rem; color:var(--gray-500); margin-top:0.3rem; font-style:italic;">"${record.confirmationComment}"</div>`;
     }
+    let attachHtml = "";
+    if (record.attachments && record.attachments.length > 0) {
+        attachHtml = `<div class="record-attachments" style="margin-top:0.5rem">` +
+            record.attachments.map((a) => `<span class="attachment-chip" style="cursor:pointer" onclick="downloadAttachment(${record.id}, ${a.id}, '${a.originalFilename}')">${a.originalFilename}</span>`).join("") + `</div>`;
+    }
     let actions = "";
     if (isPatient && !record.confirmed) {
         actions = `
@@ -302,6 +363,7 @@ function renderRecordCard(record, isPatient) {
             <div class="record-details">${details}</div>
             ${record.notes ? `<div style="font-size:0.85rem; color:var(--gray-500); margin-top:0.3rem;">Notes: ${record.notes}</div>` : ""}
             ${icdHtml}
+            ${attachHtml}
             ${confirmInfo}
             ${actions}
         </div>`;
@@ -319,6 +381,17 @@ window.deleteRecord = async function (recordId) {
         return;
     try {
         await api("DELETE", `/api/patients/me/records/${recordId}`);
+        renderPatientRecords();
+    }
+    catch (e) {
+        alert(e.message);
+    }
+};
+window.deleteAttachment = async function (recordId, attachmentId) {
+    if (!confirm("Delete this attachment?"))
+        return;
+    try {
+        await api("DELETE", `/api/patients/me/records/${recordId}/attachments/${attachmentId}`);
         renderPatientRecords();
     }
     catch (e) {
@@ -371,6 +444,15 @@ function showRecordModal(record) {
             <div class="form-group">
                 <label>Notes</label>
                 <textarea id="m-notes" rows="2">${record?.notes || ""}</textarea>
+            </div>
+            <div id="m-attachment-section" class="${isEdit ? "" : "hidden"}">
+                <hr style="margin:1rem 0; border-color:var(--gray-200)">
+                <h3>Attachments</h3>
+                <div id="m-existing-attachments"></div>
+                <div class="form-group">
+                    <label>Upload file (PDF, JPEG, PNG — max 10 MB)</label>
+                    <input type="file" id="m-file-input" accept=".pdf,.jpg,.jpeg,.png" multiple>
+                </div>
             </div>
             <div id="m-vaccination-fields" class="${(record?.category || "ILLNESS") !== "VACCINATION" ? "hidden" : ""}">
                 <hr style="margin:1rem 0; border-color:var(--gray-200)">
@@ -435,6 +517,18 @@ function showRecordModal(record) {
     modal.querySelector("#m-cancel").addEventListener("click", () => modal.remove());
     modal.addEventListener("click", (e) => { if (e.target === modal)
         modal.remove(); });
+    // Load existing attachments when editing
+    if (isEdit && record) {
+        const attContainer = modal.querySelector("#m-existing-attachments");
+        api("GET", `/api/patients/me/records/${record.id}/attachments`).then((atts) => {
+            if (atts.length > 0) {
+                attContainer.innerHTML = atts.map((a) => `<div class="attachment-chip" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                        <span style="cursor:pointer" onclick="downloadAttachment(${record.id}, ${a.id}, '${a.originalFilename}')">${a.originalFilename}</span>
+                        <button class="btn btn-danger btn-sm" onclick="deleteAttachment(${record.id}, ${a.id})" style="padding:0.1rem 0.4rem;font-size:0.75rem">&times;</button>
+                    </div>`).join("");
+            }
+        });
+    }
     modal.querySelector("#m-save").addEventListener("click", async () => {
         const body = {
             category: modal.querySelector("#m-category").value,
@@ -454,11 +548,24 @@ function showRecordModal(record) {
             prescribingDoctor: modal.querySelector("#m-prescribingDoctor").value,
         };
         try {
+            let savedRecord;
             if (isEdit) {
-                await api("PUT", `/api/patients/me/records/${record.id}`, body);
+                savedRecord = await api("PUT", `/api/patients/me/records/${record.id}`, body);
             }
             else {
-                await api("POST", "/api/patients/me/records", body);
+                savedRecord = await api("POST", "/api/patients/me/records", body);
+            }
+            // Upload selected files
+            const fileInput = modal.querySelector("#m-file-input");
+            if (fileInput && fileInput.files) {
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    try {
+                        await apiUpload(`/api/patients/me/records/${savedRecord.id}/attachments`, fileInput.files[i]);
+                    }
+                    catch (err) {
+                        alert("Failed to upload " + fileInput.files[i].name + ": " + err.message);
+                    }
+                }
             }
             modal.remove();
             renderPatientRecords();
@@ -654,6 +761,11 @@ function renderDoctorRecordCard(record, patientId) {
         icdHtml = `<div class="record-details" style="margin-top:0.5rem">` +
             record.icd10Codes.map((icd) => `<span class="icd-chip">${icd.code}: ${icd.description} <button onclick="removeIcd10(${record.id}, ${icd.id})" title="Remove">&times;</button></span>`).join("") + `</div>`;
     }
+    let attachHtml = "";
+    if (record.attachments && record.attachments.length > 0) {
+        attachHtml = `<div class="record-attachments" style="margin-top:0.5rem">` +
+            record.attachments.map((a) => `<span class="attachment-chip" style="cursor:pointer" onclick="downloadDoctorAttachment(${record.id}, ${a.id}, '${a.originalFilename}')">${a.originalFilename}</span>`).join("") + `</div>`;
+    }
     let actions = "";
     if (!record.confirmed) {
         actions = `
@@ -680,6 +792,7 @@ function renderDoctorRecordCard(record, patientId) {
             ${record.confirmedBy ? `<div style="font-size:0.85rem;color:var(--success);margin-top:0.3rem">Confirmed by Dr. ${record.confirmedBy} ${record.confirmedAt ? "on " + record.confirmedAt.split("T")[0] : ""}</div>` : ""}
             ${record.confirmationComment ? `<div style="font-size:0.85rem;color:var(--gray-500);margin-top:0.3rem;font-style:italic">"${record.confirmationComment}"</div>` : ""}
             ${icdHtml}
+            ${attachHtml}
             ${actions}
         </div>`;
 }

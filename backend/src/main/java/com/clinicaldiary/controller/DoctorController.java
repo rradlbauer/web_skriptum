@@ -3,10 +3,15 @@ package com.clinicaldiary.controller;
 import com.clinicaldiary.entity.*;
 import com.clinicaldiary.repository.*;
 import com.clinicaldiary.security.UserPrincipal;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -22,11 +27,15 @@ public class DoctorController {
     private final RecordConfirmationRepository confirmationRepo;
     private final RecordIcd10Repository recordIcd10Repo;
     private final Icd10CodeRepository icd10CodeRepo;
+    private final RecordAttachmentRepository attachmentRepo;
+
+    private static final Path UPLOAD_DIR = Path.of("uploads");
 
     public DoctorController(DoctorRepository doctorRepo, PatientRepository patientRepo,
                             HealthRecordRepository recordRepo, DoctorPatientRepository doctorPatientRepo,
                             RecordConfirmationRepository confirmationRepo,
-                            RecordIcd10Repository recordIcd10Repo, Icd10CodeRepository icd10CodeRepo) {
+                            RecordIcd10Repository recordIcd10Repo, Icd10CodeRepository icd10CodeRepo,
+                            RecordAttachmentRepository attachmentRepo) {
         this.doctorRepo = doctorRepo;
         this.patientRepo = patientRepo;
         this.recordRepo = recordRepo;
@@ -34,6 +43,7 @@ public class DoctorController {
         this.confirmationRepo = confirmationRepo;
         this.recordIcd10Repo = recordIcd10Repo;
         this.icd10CodeRepo = icd10CodeRepo;
+        this.attachmentRepo = attachmentRepo;
     }
 
     private Long getCurrentDoctorId(Authentication auth) {
@@ -121,6 +131,29 @@ public class DoctorController {
         return ResponseEntity.ok(Map.of("message", "ICD-10 code removed"));
     }
 
+    @GetMapping("/records/{recordId}/attachments/{attachmentId}")
+    public ResponseEntity<?> downloadAttachment(Authentication auth, @PathVariable Long recordId,
+                                                @PathVariable Long attachmentId) throws IOException {
+        HealthRecord record = recordRepo.findById(recordId).orElseThrow();
+        if (!doctorPatientRepo.existsByDoctorIdAndPatientId(getCurrentDoctorId(auth), record.getPatientId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Patient not assigned to you"));
+        }
+        RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
+        if (!att.getRecordId().equals(recordId)) {
+            return ResponseEntity.status(404).body(Map.of("error", "Attachment not found"));
+        }
+        Path filePath = UPLOAD_DIR.resolve(att.getStoredFilename());
+        if (!Files.exists(filePath)) {
+            return ResponseEntity.status(404).body(Map.of("error", "File not found on disk"));
+        }
+        byte[] content = Files.readAllBytes(filePath);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(att.getContentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + att.getOriginalFilename() + "\"")
+                .body(content);
+    }
+
     @GetMapping("/icd10/search")
     public ResponseEntity<?> searchIcd10(@RequestParam String q) {
         return ResponseEntity.ok(icd10CodeRepo.search(q).stream().map(c -> {
@@ -150,6 +183,13 @@ public class DoctorController {
             Map<String, Object> im = new HashMap<>();
             im.put("id", icd.getId()); im.put("code", icd.getIcd10Code()); im.put("description", icd.getIcd10Description());
             return im;
+        }).collect(Collectors.toList()));
+        m.put("attachments", attachmentRepo.findByRecordId(r.getId()).stream().map(a -> {
+            Map<String, Object> am = new HashMap<>();
+            am.put("id", a.getId()); am.put("originalFilename", a.getOriginalFilename());
+            am.put("contentType", a.getContentType()); am.put("size", a.getSize());
+            am.put("uploadedAt", a.getUploadedAt());
+            return am;
         }).collect(Collectors.toList()));
         return m;
     }
