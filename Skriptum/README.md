@@ -1,8 +1,9 @@
 # Web-Skriptum
 
-Ein Skriptum für den Einstieg in Webentwicklung und Web-Applikationen, aufbauend auf den Java-Kenntnissen und dem Java-Skriptum.
+Ein Skriptum für den Einstieg in Webentwicklung und Web-Applikationen, 
+aufbauend auf den Java-Kenntnissen und dem
+[Java Skriptum](https://github.com/rradlbauer/java_skriptum/tree/master/skriptum)
 
-Die Sprache ist **Deutsch**, alle Code-Beispiele sind in **englischer Sprache** (Variablen, Funktionen, Bezeichner) gehalten. Beispiele und Übungen haben nach Möglichkeit ein **medizinisches Thema** (Patienten, Ärzt*innen, Diagnosen, Medikamente, Impfungen, ...).
 
 Nr. | Kapitel | Übungen
 -----|---------|----------
@@ -35,12 +36,3 @@ Nr. | Kapitel | Übungen
 09.0 | [Kommunikation Spring Boot – TypeScript](skriptum/09.0_Kommunikation_SpringBoot_TS.md) | [Übungen](uebungen/UE_09.0_Kommunikation_SpringBoot_TS.md)
 09.1 | [Single Page Application (SPA)](skriptum/09.1_SPA.md) | [Übungen](uebungen/UE_09.1_SPA.md)
 
-## Verzeichnisstruktur
-
-```
-web_skriptum/
-├── README.md              Dieses Inhaltsverzeichnis
-├── skriptum/              Kapitel (28 Dateien)
-├── uebungen/              Übungen (27 Dateien)
-└── src/                   Beispielprojekt: Patientenverwaltung (SPA, Spring Boot)
-```
