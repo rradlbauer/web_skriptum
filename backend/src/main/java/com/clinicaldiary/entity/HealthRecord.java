@@ -1,79 +1,73 @@
 package com.clinicaldiary.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "health_records")
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "record_type")
 public class HealthRecord {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long patientId;
-
-    @Column(nullable = false)
-    private String category;
-
     private String title;
     private String description;
-    private String dateFrom;
-    private String dateTo;
-    private String severity;
-    private String notes;
-    private String medicationName;
-    private String dosage;
-    private String frequency;
-    private String prescribingDoctor;
-    private String vaccineName;
-    private Integer doseNumber;
-    private String batchNumber;
-    private String institution;
+
+    private LocalDate dateFrom;
+    private LocalDate dateTo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "patient_id", nullable = false)
+    private Patient patient;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_id")
+    private Doctor createdBy;
+
+    @OneToMany(mappedBy = "record", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<RecordConfirmation> confirmations = new ArrayList<>();
+
+    @OneToMany(mappedBy = "record", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<RecordIcd10> icd10Codes = new ArrayList<>();
+
+    @OneToMany(mappedBy = "record", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<RecordAttachment> attachments = new ArrayList<>();
 
     @Column(nullable = false)
-    private String createdAt;
+    private LocalDateTime createdAt;
 
-    private String updatedAt;
+    private LocalDateTime updatedAt;
 
     public HealthRecord() {}
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public Long getPatientId() { return patientId; }
-    public void setPatientId(Long patientId) { this.patientId = patientId; }
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getDescription() { return description; }
-    public void setDescription(String d) { this.description = d; }
-    public String getDateFrom() { return dateFrom; }
-    public void setDateFrom(String d) { this.dateFrom = d; }
-    public String getDateTo() { return dateTo; }
-    public void setDateTo(String d) { this.dateTo = d; }
-    public String getSeverity() { return severity; }
-    public void setSeverity(String s) { this.severity = s; }
-    public String getNotes() { return notes; }
-    public void setNotes(String n) { this.notes = n; }
-    public String getMedicationName() { return medicationName; }
-    public void setMedicationName(String m) { this.medicationName = m; }
-    public String getDosage() { return dosage; }
-    public void setDosage(String d) { this.dosage = d; }
-    public String getFrequency() { return frequency; }
-    public void setFrequency(String f) { this.frequency = f; }
-    public String getPrescribingDoctor() { return prescribingDoctor; }
-    public void setPrescribingDoctor(String d) { this.prescribingDoctor = d; }
-    public String getVaccineName() { return vaccineName; }
-    public void setVaccineName(String v) { this.vaccineName = v; }
-    public Integer getDoseNumber() { return doseNumber; }
-    public void setDoseNumber(Integer d) { this.doseNumber = d; }
-    public String getBatchNumber() { return batchNumber; }
-    public void setBatchNumber(String b) { this.batchNumber = b; }
-    public String getInstitution() { return institution; }
-    public void setInstitution(String i) { this.institution = i; }
-    public String getCreatedAt() { return createdAt; }
-    public void setCreatedAt(String c) { this.createdAt = c; }
-    public String getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(String u) { this.updatedAt = u; }
+    public void setDescription(String description) { this.description = description; }
+    public LocalDate getDateFrom() { return dateFrom; }
+    public void setDateFrom(LocalDate dateFrom) { this.dateFrom = dateFrom; }
+    public LocalDate getDateTo() { return dateTo; }
+    public void setDateTo(LocalDate dateTo) { this.dateTo = dateTo; }
+    public Patient getPatient() { return patient; }
+    public void setPatient(Patient patient) { this.patient = patient; }
+    public Doctor getCreatedBy() { return createdBy; }
+    public void setCreatedBy(Doctor createdBy) { this.createdBy = createdBy; }
+    public List<RecordConfirmation> getConfirmations() { return confirmations; }
+    public void setConfirmations(List<RecordConfirmation> confirmations) { this.confirmations = confirmations; }
+    public List<RecordIcd10> getIcd10Codes() { return icd10Codes; }
+    public void setIcd10Codes(List<RecordIcd10> icd10Codes) { this.icd10Codes = icd10Codes; }
+    public List<RecordAttachment> getAttachments() { return attachments; }
+    public void setAttachments(List<RecordAttachment> attachments) { this.attachments = attachments; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

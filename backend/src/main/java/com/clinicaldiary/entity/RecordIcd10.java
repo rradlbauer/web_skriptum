@@ -1,6 +1,7 @@
 package com.clinicaldiary.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "record_icd10")
@@ -10,34 +11,31 @@ public class RecordIcd10 {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long recordId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "record_id", nullable = false)
+    private HealthRecord record;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "icd10_code_id", nullable = false)
+    private Icd10Code icd10Code;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "doctor_id", nullable = false)
+    private Doctor doctor;
 
     @Column(nullable = false)
-    private Long icd10CodeId;
-
-    private String icd10Code;
-    private String icd10Description;
-
-    @Column(nullable = false)
-    private Long doctorId;
-
-    private String assignedAt;
+    private LocalDateTime assignedAt;
 
     public RecordIcd10() {}
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public Long getRecordId() { return recordId; }
-    public void setRecordId(Long r) { this.recordId = r; }
-    public Long getIcd10CodeId() { return icd10CodeId; }
-    public void setIcd10CodeId(Long c) { this.icd10CodeId = c; }
-    public String getIcd10Code() { return icd10Code; }
-    public void setIcd10Code(String c) { this.icd10Code = c; }
-    public String getIcd10Description() { return icd10Description; }
-    public void setIcd10Description(String d) { this.icd10Description = d; }
-    public Long getDoctorId() { return doctorId; }
-    public void setDoctorId(Long d) { this.doctorId = d; }
-    public String getAssignedAt() { return assignedAt; }
-    public void setAssignedAt(String a) { this.assignedAt = a; }
+    public HealthRecord getRecord() { return record; }
+    public void setRecord(HealthRecord record) { this.record = record; }
+    public Icd10Code getIcd10Code() { return icd10Code; }
+    public void setIcd10Code(Icd10Code icd10Code) { this.icd10Code = icd10Code; }
+    public Doctor getDoctor() { return doctor; }
+    public void setDoctor(Doctor doctor) { this.doctor = doctor; }
+    public LocalDateTime getAssignedAt() { return assignedAt; }
+    public void setAssignedAt(LocalDateTime assignedAt) { this.assignedAt = assignedAt; }
 }

@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Map;
 
 @RestController
@@ -42,7 +43,7 @@ public class AuthController {
         patient.setSsn(body.get("ssn"));
         patient.setFirstName(body.get("firstName"));
         patient.setLastName(body.get("lastName"));
-        patient.setDateOfBirth(body.get("dateOfBirth"));
+        patient.setDateOfBirth(LocalDate.parse(body.get("dateOfBirth")));
         patientRepo.save(patient);
 
         String token = jwtTokenProvider.generateToken(patient.getId(), patient.getEmail(), "PATIENT");

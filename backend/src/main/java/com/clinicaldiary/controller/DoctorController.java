@@ -23,7 +23,6 @@ public class DoctorController {
     private final DoctorRepository doctorRepo;
     private final PatientRepository patientRepo;
     private final HealthRecordRepository recordRepo;
-    private final DoctorPatientRepository doctorPatientRepo;
     private final RecordConfirmationRepository confirmationRepo;
     private final RecordIcd10Repository recordIcd10Repo;
     private final Icd10CodeRepository icd10CodeRepo;
@@ -32,14 +31,13 @@ public class DoctorController {
     private static final Path UPLOAD_DIR = Path.of("uploads");
 
     public DoctorController(DoctorRepository doctorRepo, PatientRepository patientRepo,
-                            HealthRecordRepository recordRepo, DoctorPatientRepository doctorPatientRepo,
+                            HealthRecordRepository recordRepo,
                             RecordConfirmationRepository confirmationRepo,
                             RecordIcd10Repository recordIcd10Repo, Icd10CodeRepository icd10CodeRepo,
                             RecordAttachmentRepository attachmentRepo) {
         this.doctorRepo = doctorRepo;
         this.patientRepo = patientRepo;
         this.recordRepo = recordRepo;
-        this.doctorPatientRepo = doctorPatientRepo;
         this.confirmationRepo = confirmationRepo;
         this.recordIcd10Repo = recordIcd10Repo;
         this.icd10CodeRepo = icd10CodeRepo;
@@ -61,8 +59,8 @@ public class DoctorController {
 
     @GetMapping("/me/patients")
     public ResponseEntity<?> getPatients(Authentication auth) {
-        List<Long> patientIds = doctorPatientRepo.findPatientIdsByDoctorId(getCurrentDoctorId(auth));
-        return ResponseEntity.ok(patientRepo.findAllById(patientIds).stream().map(p -> {
+        Doctor doctor = doctorRepo.findById(getCurrentDoctorId(auth)).orElseThrow();
+        return ResponseEntity.ok(doctor.getPatients().stream().map(p -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", p.getId()); m.put("email", p.getEmail()); m.put("ssn", p.getSsn());
             m.put("firstName", p.getFirstName()); m.put("lastName", p.getLastName());
@@ -73,10 +71,12 @@ public class DoctorController {
 
     @GetMapping("/me/patients/{patientId}/records")
     public ResponseEntity<?> getPatientRecords(Authentication auth, @PathVariable Long patientId) {
-        if (!doctorPatientRepo.existsByDoctorIdAndPatientId(getCurrentDoctorId(auth), patientId)) {
+        Doctor doctor = doctorRepo.findById(getCurrentDoctorId(auth)).orElseThrow();
+        Patient patient = patientRepo.findById(patientId).orElseThrow();
+        if (!doctor.getPatients().contains(patient)) {
             return ResponseEntity.status(403).body(Map.of("error", "Patient not assigned to you"));
         }
-        return ResponseEntity.ok(recordRepo.findByPatientIdOrderByCreatedAtDesc(patientId)
+        return ResponseEntity.ok(recordRepo.findByPatientOrderByCreatedAtDesc(patient)
                 .stream().map(this::enrichRecord).collect(Collectors.toList()));
     }
 
@@ -85,23 +85,22 @@ public class DoctorController {
                                            @RequestBody Map<String, String> body) {
         Long doctorId = getCurrentDoctorId(auth);
         HealthRecord record = recordRepo.findById(recordId).orElseThrow();
-        if (!doctorPatientRepo.existsByDoctorIdAndPatientId(doctorId, record.getPatientId())) {
+        Doctor doctor = doctorRepo.findById(doctorId).orElseThrow();
+        if (!doctor.getPatients().contains(record.getPatient())) {
             return ResponseEntity.status(403).body(Map.of("error", "Patient not assigned to you"));
         }
-        if (confirmationRepo.findByRecordId(recordId).isPresent()) {
+        if (confirmationRepo.findByRecord(record).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Record already confirmed"));
         }
-        Doctor doctor = doctorRepo.findById(doctorId).orElseThrow();
         RecordConfirmation conf = new RecordConfirmation();
-        conf.setRecordId(recordId);
-        conf.setDoctorId(doctorId);
-        conf.setDoctorName(doctor.getFirstName() + " " + doctor.getLastName());
-        conf.setDoctorLicenseNumber(doctor.getMedicalLicenseNumber());
+        conf.setRecord(record);
+        conf.setDoctor(doctor);
         conf.setComment(body.get("comment"));
-        conf.setConfirmedAt(LocalDateTime.now().toString());
+        conf.setConfirmedAt(LocalDateTime.now());
         confirmationRepo.save(conf);
         return ResponseEntity.ok(Map.of("message", "Record confirmed",
-                "confirmedBy", conf.getDoctorName(), "confirmedAt", conf.getConfirmedAt()));
+                "confirmedBy", doctor.getFirstName() + " " + doctor.getLastName(),
+                "confirmedAt", conf.getConfirmedAt()));
     }
 
     @PostMapping("/records/{recordId}/icd10")
@@ -109,20 +108,19 @@ public class DoctorController {
                                          @RequestBody Map<String, Long> body) {
         Long doctorId = getCurrentDoctorId(auth);
         HealthRecord record = recordRepo.findById(recordId).orElseThrow();
-        if (!doctorPatientRepo.existsByDoctorIdAndPatientId(doctorId, record.getPatientId())) {
+        Doctor doctor = doctorRepo.findById(doctorId).orElseThrow();
+        if (!doctor.getPatients().contains(record.getPatient())) {
             return ResponseEntity.status(403).body(Map.of("error", "Patient not assigned to you"));
         }
         Icd10Code icd = icd10CodeRepo.findById(body.get("icd10CodeId")).orElseThrow();
         RecordIcd10 ri = new RecordIcd10();
-        ri.setRecordId(recordId);
-        ri.setIcd10CodeId(icd.getId());
-        ri.setIcd10Code(icd.getCode());
-        ri.setIcd10Description(icd.getDescription());
-        ri.setDoctorId(doctorId);
-        ri.setAssignedAt(LocalDateTime.now().toString());
+        ri.setRecord(record);
+        ri.setIcd10Code(icd);
+        ri.setDoctor(doctor);
+        ri.setAssignedAt(LocalDateTime.now());
         recordIcd10Repo.save(ri);
-        return ResponseEntity.ok(Map.of("id", ri.getId(), "code", ri.getIcd10Code(),
-                "description", ri.getIcd10Description()));
+        return ResponseEntity.ok(Map.of("id", ri.getId(), "code", icd.getCode(),
+                "description", icd.getDescription()));
     }
 
     @DeleteMapping("/records/{recordId}/icd10/{icd10Id}")
@@ -135,11 +133,12 @@ public class DoctorController {
     public ResponseEntity<?> downloadAttachment(Authentication auth, @PathVariable Long recordId,
                                                 @PathVariable Long attachmentId) throws IOException {
         HealthRecord record = recordRepo.findById(recordId).orElseThrow();
-        if (!doctorPatientRepo.existsByDoctorIdAndPatientId(getCurrentDoctorId(auth), record.getPatientId())) {
+        Doctor doctor = doctorRepo.findById(getCurrentDoctorId(auth)).orElseThrow();
+        if (!doctor.getPatients().contains(record.getPatient())) {
             return ResponseEntity.status(403).body(Map.of("error", "Patient not assigned to you"));
         }
         RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
-        if (!att.getRecordId().equals(recordId)) {
+        if (!att.getRecord().getId().equals(recordId)) {
             return ResponseEntity.status(404).body(Map.of("error", "Attachment not found"));
         }
         Path filePath = UPLOAD_DIR.resolve(att.getStoredFilename());
@@ -165,26 +164,49 @@ public class DoctorController {
 
     private Map<String, Object> enrichRecord(HealthRecord r) {
         Map<String, Object> m = new HashMap<>();
-        m.put("id", r.getId()); m.put("patientId", r.getPatientId());
-        m.put("category", r.getCategory()); m.put("title", r.getTitle());
+        m.put("id", r.getId());
+        m.put("patientId", r.getPatient().getId());
+        m.put("category", r.getClass().getAnnotation(jakarta.persistence.DiscriminatorValue.class).value());
+        m.put("title", r.getTitle());
         m.put("description", r.getDescription());
-        m.put("dateFrom", r.getDateFrom()); m.put("dateTo", r.getDateTo());
-        m.put("severity", r.getSeverity()); m.put("notes", r.getNotes());
-        m.put("medicationName", r.getMedicationName()); m.put("dosage", r.getDosage());
-        m.put("frequency", r.getFrequency()); m.put("prescribingDoctor", r.getPrescribingDoctor());
-        m.put("vaccineName", r.getVaccineName()); m.put("doseNumber", r.getDoseNumber());
-        m.put("batchNumber", r.getBatchNumber()); m.put("institution", r.getInstitution());
-        m.put("createdAt", r.getCreatedAt()); m.put("updatedAt", r.getUpdatedAt());
-        Optional<RecordConfirmation> c = confirmationRepo.findByRecordId(r.getId());
+        m.put("dateFrom", r.getDateFrom());
+        m.put("dateTo", r.getDateTo());
+
+        if (r instanceof IllnessRecord ir) {
+            m.put("severity", ir.getSeverity());
+            m.put("notes", ir.getNotes());
+        } else if (r instanceof VaccinationRecord vr) {
+            m.put("vaccineName", vr.getVaccineName());
+            m.put("doseNumber", vr.getDoseNumber());
+            m.put("batchNumber", vr.getBatchNumber());
+            m.put("institution", vr.getInstitution());
+        } else if (r instanceof MedicationRecord mr) {
+            m.put("medicationName", mr.getMedicationName());
+            m.put("dosage", mr.getDosage());
+            m.put("frequency", mr.getFrequency());
+            m.put("prescribingDoctor", mr.getPrescribingDoctor());
+        }
+
+        m.put("createdAt", r.getCreatedAt());
+        m.put("updatedAt", r.getUpdatedAt());
+
+        Optional<RecordConfirmation> c = confirmationRepo.findByRecord(r);
         m.put("confirmed", c.isPresent());
-        c.ifPresent(conf -> { m.put("confirmedBy", conf.getDoctorName());
-            m.put("confirmedAt", conf.getConfirmedAt()); m.put("confirmationComment", conf.getComment()); });
-        m.put("icd10Codes", recordIcd10Repo.findByRecordId(r.getId()).stream().map(icd -> {
+        c.ifPresent(conf -> {
+            m.put("confirmedBy", conf.getDoctor().getFirstName() + " " + conf.getDoctor().getLastName());
+            m.put("confirmedAt", conf.getConfirmedAt());
+            m.put("confirmationComment", conf.getComment());
+        });
+
+        m.put("icd10Codes", recordIcd10Repo.findByRecord(r).stream().map(icd -> {
             Map<String, Object> im = new HashMap<>();
-            im.put("id", icd.getId()); im.put("code", icd.getIcd10Code()); im.put("description", icd.getIcd10Description());
+            im.put("id", icd.getId());
+            im.put("code", icd.getIcd10Code().getCode());
+            im.put("description", icd.getIcd10Code().getDescription());
             return im;
         }).collect(Collectors.toList()));
-        m.put("attachments", attachmentRepo.findByRecordId(r.getId()).stream().map(a -> {
+
+        m.put("attachments", attachmentRepo.findByRecord(r).stream().map(a -> {
             Map<String, Object> am = new HashMap<>();
             am.put("id", a.getId()); am.put("originalFilename", a.getOriginalFilename());
             am.put("contentType", a.getContentType()); am.put("size", a.getSize());

@@ -1,6 +1,7 @@
 package com.clinicaldiary.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "record_attachments")
@@ -10,8 +11,9 @@ public class RecordAttachment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long recordId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "record_id", nullable = false)
+    private HealthRecord record;
 
     @Column(nullable = false)
     private String originalFilename;
@@ -25,18 +27,19 @@ public class RecordAttachment {
     @Column(nullable = false)
     private Long size;
 
-    @Column(nullable = false)
-    private Long uploadedBy;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uploaded_by_id", nullable = false)
+    private User uploadedBy;
 
     @Column(nullable = false)
-    private String uploadedAt;
+    private LocalDateTime uploadedAt;
 
     public RecordAttachment() {}
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public Long getRecordId() { return recordId; }
-    public void setRecordId(Long recordId) { this.recordId = recordId; }
+    public HealthRecord getRecord() { return record; }
+    public void setRecord(HealthRecord record) { this.record = record; }
     public String getOriginalFilename() { return originalFilename; }
     public void setOriginalFilename(String f) { this.originalFilename = f; }
     public String getStoredFilename() { return storedFilename; }
@@ -45,8 +48,8 @@ public class RecordAttachment {
     public void setContentType(String c) { this.contentType = c; }
     public Long getSize() { return size; }
     public void setSize(Long s) { this.size = s; }
-    public Long getUploadedBy() { return uploadedBy; }
-    public void setUploadedBy(Long u) { this.uploadedBy = u; }
-    public String getUploadedAt() { return uploadedAt; }
-    public void setUploadedAt(String a) { this.uploadedAt = a; }
+    public User getUploadedBy() { return uploadedBy; }
+    public void setUploadedBy(User uploadedBy) { this.uploadedBy = uploadedBy; }
+    public LocalDateTime getUploadedAt() { return uploadedAt; }
+    public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
 }

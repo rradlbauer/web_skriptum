@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -22,7 +23,6 @@ public class PatientController {
 
     private final PatientRepository patientRepo;
     private final HealthRecordRepository recordRepo;
-    private final DoctorPatientRepository doctorPatientRepo;
     private final DoctorRepository doctorRepo;
     private final RecordConfirmationRepository confirmationRepo;
     private final RecordIcd10Repository recordIcd10Repo;
@@ -31,13 +31,12 @@ public class PatientController {
     private static final Path UPLOAD_DIR = Path.of("uploads");
 
     public PatientController(PatientRepository patientRepo, HealthRecordRepository recordRepo,
-                             DoctorPatientRepository doctorPatientRepo, DoctorRepository doctorRepo,
+                             DoctorRepository doctorRepo,
                              RecordConfirmationRepository confirmationRepo,
                              RecordIcd10Repository recordIcd10Repo,
                              RecordAttachmentRepository attachmentRepo) {
         this.patientRepo = patientRepo;
         this.recordRepo = recordRepo;
-        this.doctorPatientRepo = doctorPatientRepo;
         this.doctorRepo = doctorRepo;
         this.confirmationRepo = confirmationRepo;
         this.recordIcd10Repo = recordIcd10Repo;
@@ -58,32 +57,49 @@ public class PatientController {
 
     @GetMapping("/me/records")
     public ResponseEntity<?> getRecords(Authentication auth) {
-        Long patientId = getCurrentPatientId(auth);
-        List<Map<String, Object>> result = recordRepo.findByPatientIdOrderByCreatedAtDesc(patientId)
+        Patient patient = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
+        List<Map<String, Object>> result = recordRepo.findByPatientOrderByCreatedAtDesc(patient)
                 .stream().map(this::enrichRecord).collect(Collectors.toList());
         return ResponseEntity.ok(result);
     }
 
     @PostMapping("/me/records")
     public ResponseEntity<?> createRecord(Authentication auth, @RequestBody Map<String, Object> body) {
-        String now = LocalDateTime.now().toString();
-        HealthRecord r = new HealthRecord();
-        r.setPatientId(getCurrentPatientId(auth));
-        r.setCategory((String) body.get("category"));
+        Patient patient = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
+        String category = (String) body.get("category");
+        HealthRecord r;
+        switch (category) {
+            case "ILLNESS":
+                IllnessRecord ir = new IllnessRecord();
+                ir.setSeverity((String) body.get("severity"));
+                ir.setNotes((String) body.get("notes"));
+                r = ir;
+                break;
+            case "VACCINATION":
+                VaccinationRecord vr = new VaccinationRecord();
+                vr.setVaccineName((String) body.get("vaccineName"));
+                vr.setDoseNumber(body.get("doseNumber") != null ? Integer.valueOf(body.get("doseNumber").toString()) : null);
+                vr.setBatchNumber((String) body.get("batchNumber"));
+                vr.setInstitution((String) body.get("institution"));
+                r = vr;
+                break;
+            case "MEDICATION":
+                MedicationRecord mr = new MedicationRecord();
+                mr.setMedicationName((String) body.get("medicationName"));
+                mr.setDosage((String) body.get("dosage"));
+                mr.setFrequency((String) body.get("frequency"));
+                mr.setPrescribingDoctor((String) body.get("prescribingDoctor"));
+                r = mr;
+                break;
+            default:
+                return ResponseEntity.badRequest().body(Map.of("error", "Unknown category: " + category));
+        }
+        r.setPatient(patient);
         r.setTitle((String) body.get("title"));
         r.setDescription((String) body.get("description"));
-        r.setDateFrom((String) body.get("dateFrom"));
-        r.setDateTo((String) body.get("dateTo"));
-        r.setSeverity((String) body.get("severity"));
-        r.setNotes((String) body.get("notes"));
-        r.setMedicationName((String) body.get("medicationName"));
-        r.setDosage((String) body.get("dosage"));
-        r.setFrequency((String) body.get("frequency"));
-        r.setPrescribingDoctor((String) body.get("prescribingDoctor"));
-        r.setVaccineName((String) body.get("vaccineName"));
-        r.setDoseNumber(body.get("doseNumber") != null ? Integer.valueOf(body.get("doseNumber").toString()) : null);
-        r.setBatchNumber((String) body.get("batchNumber"));
-        r.setInstitution((String) body.get("institution"));
+        r.setDateFrom(body.get("dateFrom") != null ? LocalDate.parse((String) body.get("dateFrom")) : null);
+        r.setDateTo(body.get("dateTo") != null ? LocalDate.parse((String) body.get("dateTo")) : null);
+        LocalDateTime now = LocalDateTime.now();
         r.setCreatedAt(now);
         r.setUpdatedAt(now);
         recordRepo.save(r);
@@ -93,27 +109,31 @@ public class PatientController {
     @PutMapping("/me/records/{id}")
     public ResponseEntity<?> updateRecord(Authentication auth, @PathVariable Long id, @RequestBody Map<String, Object> body) {
         HealthRecord r = recordRepo.findById(id).orElseThrow();
-        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+        if (!r.getPatient().getId().equals(getCurrentPatientId(auth))) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
-        if (confirmationRepo.findByRecordId(id).isPresent()) {
+        if (confirmationRepo.findByRecord(r).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Cannot edit confirmed record"));
         }
         r.setTitle((String) body.get("title"));
         r.setDescription((String) body.get("description"));
-        r.setDateFrom((String) body.get("dateFrom"));
-        r.setDateTo((String) body.get("dateTo"));
-        r.setSeverity((String) body.get("severity"));
-        r.setNotes((String) body.get("notes"));
-        r.setMedicationName((String) body.get("medicationName"));
-        r.setDosage((String) body.get("dosage"));
-        r.setFrequency((String) body.get("frequency"));
-        r.setPrescribingDoctor((String) body.get("prescribingDoctor"));
-        r.setVaccineName((String) body.get("vaccineName"));
-        r.setDoseNumber(body.get("doseNumber") != null ? Integer.valueOf(body.get("doseNumber").toString()) : null);
-        r.setBatchNumber((String) body.get("batchNumber"));
-        r.setInstitution((String) body.get("institution"));
-        r.setUpdatedAt(LocalDateTime.now().toString());
+        r.setDateFrom(body.get("dateFrom") != null ? LocalDate.parse((String) body.get("dateFrom")) : null);
+        r.setDateTo(body.get("dateTo") != null ? LocalDate.parse((String) body.get("dateTo")) : null);
+        if (r instanceof IllnessRecord ir) {
+            ir.setSeverity((String) body.get("severity"));
+            ir.setNotes((String) body.get("notes"));
+        } else if (r instanceof VaccinationRecord vr) {
+            vr.setVaccineName((String) body.get("vaccineName"));
+            vr.setDoseNumber(body.get("doseNumber") != null ? Integer.valueOf(body.get("doseNumber").toString()) : null);
+            vr.setBatchNumber((String) body.get("batchNumber"));
+            vr.setInstitution((String) body.get("institution"));
+        } else if (r instanceof MedicationRecord mr) {
+            mr.setMedicationName((String) body.get("medicationName"));
+            mr.setDosage((String) body.get("dosage"));
+            mr.setFrequency((String) body.get("frequency"));
+            mr.setPrescribingDoctor((String) body.get("prescribingDoctor"));
+        }
+        r.setUpdatedAt(LocalDateTime.now());
         recordRepo.save(r);
         return ResponseEntity.ok(enrichRecord(r));
     }
@@ -121,10 +141,10 @@ public class PatientController {
     @DeleteMapping("/me/records/{id}")
     public ResponseEntity<?> deleteRecord(Authentication auth, @PathVariable Long id) {
         HealthRecord r = recordRepo.findById(id).orElseThrow();
-        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+        if (!r.getPatient().getId().equals(getCurrentPatientId(auth))) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
-        if (confirmationRepo.findByRecordId(id).isPresent()) {
+        if (confirmationRepo.findByRecord(r).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete confirmed record"));
         }
         recordRepo.deleteById(id);
@@ -133,8 +153,8 @@ public class PatientController {
 
     @GetMapping("/me/doctors")
     public ResponseEntity<?> getAssignedDoctors(Authentication auth) {
-        List<Long> doctorIds = doctorPatientRepo.findDoctorIdsByPatientId(getCurrentPatientId(auth));
-        return ResponseEntity.ok(doctorRepo.findAllById(doctorIds).stream().map(d -> {
+        Patient patient = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
+        return ResponseEntity.ok(patient.getDoctors().stream().map(d -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", d.getId()); m.put("firstName", d.getFirstName());
             m.put("lastName", d.getLastName()); m.put("specialization", d.getSpecialization());
@@ -145,25 +165,29 @@ public class PatientController {
 
     @PostMapping("/me/doctors/{doctorId}")
     public ResponseEntity<?> assignDoctor(Authentication auth, @PathVariable Long doctorId) {
-        Long patientId = getCurrentPatientId(auth);
-        if (!doctorRepo.findById(doctorId).isPresent()) {
+        Patient patient = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
+        Doctor doctor = doctorRepo.findById(doctorId).orElse(null);
+        if (doctor == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Doctor not found"));
         }
-        if (doctorPatientRepo.existsByDoctorIdAndPatientId(doctorId, patientId)) {
+        if (doctor.getPatients().contains(patient)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Already assigned"));
         }
-        DoctorPatient dp = new DoctorPatient();
-        dp.setDoctorId(doctorId);
-        dp.setPatientId(patientId);
-        dp.setAssignedAt(LocalDateTime.now().toString());
-        doctorPatientRepo.save(dp);
+        doctor.getPatients().add(patient);
+        patient.getDoctors().add(doctor);
+        doctorRepo.save(doctor);
         return ResponseEntity.ok(Map.of("message", "Doctor assigned"));
     }
 
     @DeleteMapping("/me/doctors/{doctorId}")
     public ResponseEntity<?> removeDoctor(Authentication auth, @PathVariable Long doctorId) {
-        doctorPatientRepo.findByDoctorIdAndPatientId(doctorId, getCurrentPatientId(auth))
-                .ifPresent(doctorPatientRepo::delete);
+        Patient patient = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
+        Doctor doctor = doctorRepo.findById(doctorId).orElse(null);
+        if (doctor != null) {
+            doctor.getPatients().remove(patient);
+            patient.getDoctors().remove(doctor);
+            doctorRepo.save(doctor);
+        }
         return ResponseEntity.ok(Map.of("message", "Doctor removed"));
     }
 
@@ -178,13 +202,11 @@ public class PatientController {
         }).collect(Collectors.toList()));
     }
 
-    // --- File Attachments ---
-
     @PostMapping("/me/records/{recordId}/attachments")
     public ResponseEntity<?> uploadAttachment(Authentication auth, @PathVariable Long recordId,
                                               @RequestParam("file") MultipartFile file) throws IOException {
         HealthRecord r = recordRepo.findById(recordId).orElseThrow();
-        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+        if (!r.getPatient().getId().equals(getCurrentPatientId(auth))) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
 
@@ -192,14 +214,15 @@ public class PatientController {
         Files.createDirectories(UPLOAD_DIR);
         file.transferTo(UPLOAD_DIR.resolve(storedFilename));
 
+        User uploader = patientRepo.findById(getCurrentPatientId(auth)).orElseThrow();
         RecordAttachment att = new RecordAttachment();
-        att.setRecordId(recordId);
+        att.setRecord(r);
         att.setOriginalFilename(file.getOriginalFilename());
         att.setStoredFilename(storedFilename);
         att.setContentType(file.getContentType());
         att.setSize(file.getSize());
-        att.setUploadedBy(getCurrentPatientId(auth));
-        att.setUploadedAt(LocalDateTime.now().toString());
+        att.setUploadedBy(uploader);
+        att.setUploadedAt(LocalDateTime.now());
         attachmentRepo.save(att);
 
         return ResponseEntity.ok(Map.of(
@@ -214,10 +237,10 @@ public class PatientController {
     @GetMapping("/me/records/{recordId}/attachments")
     public ResponseEntity<?> listAttachments(Authentication auth, @PathVariable Long recordId) {
         HealthRecord r = recordRepo.findById(recordId).orElseThrow();
-        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+        if (!r.getPatient().getId().equals(getCurrentPatientId(auth))) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
-        return ResponseEntity.ok(attachmentRepo.findByRecordId(recordId).stream().map(a -> {
+        return ResponseEntity.ok(attachmentRepo.findByRecord(r).stream().map(a -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", a.getId()); m.put("originalFilename", a.getOriginalFilename());
             m.put("contentType", a.getContentType()); m.put("size", a.getSize());
@@ -231,15 +254,12 @@ public class PatientController {
                                                 @PathVariable Long attachmentId) throws IOException {
         HealthRecord r = recordRepo.findById(recordId).orElseThrow();
         Long patientId = getCurrentPatientId(auth);
-        if (!r.getPatientId().equals(patientId) &&
-            !doctorPatientRepo.findDoctorIdsByPatientId(patientId).isEmpty()) {
-            // patient or assigned doctor can download
-        } else if (!r.getPatientId().equals(patientId)) {
+        if (!r.getPatient().getId().equals(patientId)) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
 
         RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
-        if (!att.getRecordId().equals(recordId)) {
+        if (!att.getRecord().getId().equals(recordId)) {
             return ResponseEntity.status(404).body(Map.of("error", "Attachment not found"));
         }
 
@@ -260,10 +280,10 @@ public class PatientController {
     public ResponseEntity<?> deleteAttachment(Authentication auth, @PathVariable Long recordId,
                                               @PathVariable Long attachmentId) {
         HealthRecord r = recordRepo.findById(recordId).orElseThrow();
-        if (!r.getPatientId().equals(getCurrentPatientId(auth))) {
+        if (!r.getPatient().getId().equals(getCurrentPatientId(auth))) {
             return ResponseEntity.status(403).body(Map.of("error", "Not your record"));
         }
-        if (confirmationRepo.findByRecordId(recordId).isPresent()) {
+        if (confirmationRepo.findByRecord(r).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete attachments of confirmed record"));
         }
         RecordAttachment att = attachmentRepo.findById(attachmentId).orElseThrow();
@@ -282,26 +302,49 @@ public class PatientController {
 
     private Map<String, Object> enrichRecord(HealthRecord r) {
         Map<String, Object> m = new HashMap<>();
-        m.put("id", r.getId()); m.put("patientId", r.getPatientId());
-        m.put("category", r.getCategory()); m.put("title", r.getTitle());
+        m.put("id", r.getId());
+        m.put("patientId", r.getPatient().getId());
+        m.put("category", r.getClass().getAnnotation(jakarta.persistence.DiscriminatorValue.class).value());
+        m.put("title", r.getTitle());
         m.put("description", r.getDescription());
-        m.put("dateFrom", r.getDateFrom()); m.put("dateTo", r.getDateTo());
-        m.put("severity", r.getSeverity()); m.put("notes", r.getNotes());
-        m.put("medicationName", r.getMedicationName()); m.put("dosage", r.getDosage());
-        m.put("frequency", r.getFrequency()); m.put("prescribingDoctor", r.getPrescribingDoctor());
-        m.put("vaccineName", r.getVaccineName()); m.put("doseNumber", r.getDoseNumber());
-        m.put("batchNumber", r.getBatchNumber()); m.put("institution", r.getInstitution());
-        m.put("createdAt", r.getCreatedAt()); m.put("updatedAt", r.getUpdatedAt());
-        Optional<RecordConfirmation> c = confirmationRepo.findByRecordId(r.getId());
+        m.put("dateFrom", r.getDateFrom());
+        m.put("dateTo", r.getDateTo());
+
+        if (r instanceof IllnessRecord ir) {
+            m.put("severity", ir.getSeverity());
+            m.put("notes", ir.getNotes());
+        } else if (r instanceof VaccinationRecord vr) {
+            m.put("vaccineName", vr.getVaccineName());
+            m.put("doseNumber", vr.getDoseNumber());
+            m.put("batchNumber", vr.getBatchNumber());
+            m.put("institution", vr.getInstitution());
+        } else if (r instanceof MedicationRecord mr) {
+            m.put("medicationName", mr.getMedicationName());
+            m.put("dosage", mr.getDosage());
+            m.put("frequency", mr.getFrequency());
+            m.put("prescribingDoctor", mr.getPrescribingDoctor());
+        }
+
+        m.put("createdAt", r.getCreatedAt());
+        m.put("updatedAt", r.getUpdatedAt());
+
+        Optional<RecordConfirmation> c = confirmationRepo.findByRecord(r);
         m.put("confirmed", c.isPresent());
-        c.ifPresent(conf -> { m.put("confirmedBy", conf.getDoctorName());
-            m.put("confirmedAt", conf.getConfirmedAt()); m.put("confirmationComment", conf.getComment()); });
-        m.put("icd10Codes", recordIcd10Repo.findByRecordId(r.getId()).stream().map(icd -> {
+        c.ifPresent(conf -> {
+            m.put("confirmedBy", conf.getDoctor().getFirstName() + " " + conf.getDoctor().getLastName());
+            m.put("confirmedAt", conf.getConfirmedAt());
+            m.put("confirmationComment", conf.getComment());
+        });
+
+        m.put("icd10Codes", recordIcd10Repo.findByRecord(r).stream().map(icd -> {
             Map<String, Object> im = new HashMap<>();
-            im.put("id", icd.getId()); im.put("code", icd.getIcd10Code()); im.put("description", icd.getIcd10Description());
+            im.put("id", icd.getId());
+            im.put("code", icd.getIcd10Code().getCode());
+            im.put("description", icd.getIcd10Code().getDescription());
             return im;
         }).collect(Collectors.toList()));
-        m.put("attachments", attachmentRepo.findByRecordId(r.getId()).stream().map(a -> {
+
+        m.put("attachments", attachmentRepo.findByRecord(r).stream().map(a -> {
             Map<String, Object> am = new HashMap<>();
             am.put("id", a.getId()); am.put("originalFilename", a.getOriginalFilename());
             am.put("contentType", a.getContentType()); am.put("size", a.getSize());
